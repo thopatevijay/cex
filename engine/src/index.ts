@@ -3,6 +3,9 @@ import { createClient } from "redis";
 import { env } from "./utils/env.js";
 import { 
   getUserBalance,
+  placeLimitOrder,
+  type CreateOrderInput,
+
  } from "./store/exchange-store.js";
 
 export type EngineCommandType =
@@ -74,6 +77,21 @@ function handleEngineRequest(message: EngineRequest): unknown {
       const { userId } = message.payload as { userId : string};
       return getUserBalance(userId);
       // return 123;
+    }
+    case "create_order": {
+      console.log("ping");
+      const payload = message.payload as CreateOrderInput;
+      const order = placeLimitOrder(payload);
+
+      return {
+        orderId: order.orderId,
+        status: order.status,
+        filledQty: order.filledQty,
+        averagePrice:  order.filledQty > 0
+          ? order.fills.reduce((s, f) => s + f.price * f.qty, 0) / order.filledQty
+          : null,
+        fills: order.fills,
+      }
     }
     default:
       throw new Error(`Not implemented yet: ${message.type}`);

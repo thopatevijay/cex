@@ -1,7 +1,7 @@
-
+import {randomUUID} from "crypto";
 
 const QUOTE = "USD";
-const SEED_QUOTE = 1_000_00;
+const SEED_QUOTE = 1_000_000;
 const SEED_BASE = 1_000;
 
 export type Side = "buy" | "sell";
@@ -81,16 +81,16 @@ export const ORDERS = new Map<string, OrderRecord>();
 export const FILLS: Fill[] = [];
 
 // balances
-export function ensureBalances(userId: string, symbol: string) : void {
-
+export function ensureBalances(userId: string, symbol: string): void {
+  if (!BALANCES.has(userId)) BALANCES.set(userId, {});
   const userBalances = BALANCES.get(userId)!;
 
-  if(!userBalances[QUOTE]) {
-    userBalances[QUOTE] = { available : SEED_QUOTE, locked: 0 };
+  if (!userBalances[QUOTE]) {
+    userBalances[QUOTE] = { available: SEED_QUOTE, locked: 0 };
   }
 
-  if(userBalances[symbol]) {
-    userBalances[symbol] = { available: SEED_BASE, locked: 0};
+  if (!userBalances[symbol]) {
+    userBalances[symbol] = { available: SEED_BASE, locked: 0 };
   }
 }
 
@@ -131,4 +131,135 @@ function settleFill(
 
   consumeLocked(sellerId, symbol, fill.qty);
   credit(sellerId, QUOTE, quoteAmount);
+}
+
+function restOnBook(order: OrderRecord, book: OrderBook): void {
+  const resting: RestingOrder = {
+    orderId: order.orderId,
+    userId: order.userId,
+    side: order.side,
+    type: "limit",
+    symbol: order.symbol,
+    price: order.price!,
+    qty: order.qty,
+    filledQty: order.filledQty,
+    status: order.status,
+    createdAt: order.createdAt,
+  }
+
+  const levels = order.side === "buy" ? book.bids : book.asks;
+  const queue = levels.get(resting.price) ?? [];
+  queue.push(resting);
+  levels.set(resting.price, queue);
+}
+
+export function getOrCreateOrderBook(symbol: string): OrderBook {
+  let book = ORDERBOOKS.get(symbol);
+
+  if(!book) {
+    book = { bids: new Map(), asks: new Map()};
+    ORDERBOOKS.set(symbol, book);
+  }
+
+  return book;
+}
+
+export function placeLimitOrder(input: CreateOrderInput): OrderRecord {
+  const { userId, qty, side, symbol} = input;
+  const price = input.price!;
+
+  ensureBalances(userId, symbol);
+
+  if(side === "buy") {
+    lockBalance(userId, QUOTE, price * qty);
+  } else {
+    lockBalance(userId, symbol, qty)
+  }
+
+  const book = getOrCreateOrderBook(symbol);
+
+  const order: OrderRecord = {
+    orderId: randomUUID(),
+    userId,
+    side,
+    type: "limit",
+    symbol,
+    price,
+    qty,
+    filledQty: 0,
+    status: "open",
+    fills: [],
+    createdAt: Date.now(),
+  };
+
+  const oppositePrices = side === "buy"
+    ? [...book.asks.keys()].sort((a,b) => a - b)
+    : [...book.bids.keys()].sort((a,b) => b - a);
+
+  outer: for (const lvlPrice of oppositePrices) {
+    if (side === "buy" && price < lvlPrice) break;
+    if (side === "sell" && price > lvlPrice) break;
+
+    const levels = side === "buy" ? book.asks : book.bids;
+    const level = levels.get(lvlPrice)!;
+
+    while(level.length > 0) {
+      const maker = level[0];
+      const makerRm = maker.qty - maker.filledQty;
+      const takerRm = order.qty - order.filledQty;
+      const tradeQty = Math.min(makerRm, takerRm);
+      const tradePrice = maker.price;
+      
+
+      const fill: Fill = {
+        fillId: randomUUID(),
+        symbol,
+        price: tradePrice,
+        qty: tradeQty,
+        buyOrderId: side === "buy" ? order.orderId : maker.orderId,
+        sellOrderId: side === "sell" ? order.orderId : maker.orderId,
+        createdAt: Date.now(),
+      };
+
+      order.filledQty += tradeQty;
+      order.fills.push(fill);
+      maker.filledQty += tradeQty;
+
+      let makerRecord = ORDERS.get(maker.orderId)!;
+      makerRecord.filledQty += tradeQty;
+      makerRecord.fills.push(fill);
+
+      const buyerId = side === "buy" ? order.userId : maker.userId;
+      const sellerId = side === "sell" ? order.userId : maker.userId;
+      settleFill(fill, buyerId, sellerId, symbol);
+
+      FILLS.push(fill);
+
+      if (maker.filledQty === maker.qty) {
+        maker.status = "filled";
+        makerRecord.status = "filled";
+        level.shift();
+      }
+
+      if(order.filledQty === order.qty) {
+        order.status = "filled";
+        break outer;
+      }
+    }
+
+    if(level.length === 0) {
+      (side === "buy" ? book.asks : book.bids).delete(lvlPrice);
+    }
+  }
+
+  if (order.filledQty === 0) {
+    order.status = "open";
+    restOnBook(order, book);
+  } else if (order.filledQty < order.qty) {
+    order.status = "partially_filled";
+    restOnBook(order, book);
+  }
+
+  ORDERS.set(order.orderId, order);
+  return order;
 }
