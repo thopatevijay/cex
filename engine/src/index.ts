@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createClient } from "redis";
 import { env } from "./utils/env.js";
 import { 
+  getDepth,
   getUserBalance,
   placeLimitOrder,
   type CreateOrderInput,
@@ -92,6 +93,10 @@ function handleEngineRequest(message: EngineRequest): unknown {
           : null,
         fills: order.fills,
       }
+    }
+    case "get_depth" : {
+      const { symbol } = message.payload as { symbol : string};
+      return getDepth(symbol);
     }
     default:
       throw new Error(`Not implemented yet: ${message.type}`);

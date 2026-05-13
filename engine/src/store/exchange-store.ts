@@ -263,3 +263,32 @@ export function placeLimitOrder(input: CreateOrderInput): OrderRecord {
   ORDERS.set(order.orderId, order);
   return order;
 }
+
+export function getDepth(symbol: string) : DepthResponse {
+  const book = ORDERBOOKS.get(symbol);
+
+  if(!book) return {symbol,  bids : [], asks: []};
+
+  const aggregate = (
+    levels: Map<number, RestingOrder[]>,
+    desc: boolean,
+  ): DepthLevel[] => {
+
+    const result: DepthLevel[] = [];
+    for (const [price, orders] of levels) {
+      const remaining = orders.reduce(
+        (sum, o) => sum + (o.qty - o.filledQty), 0,
+      );
+      if (remaining > 0) result.push({ price, qty: remaining});
+    } 
+    result.sort((a,b) => (desc ? b.price - a.price : a.price - b.price));
+    return result;
+  };
+
+
+  return {
+    symbol,
+    bids: aggregate(book.bids, true),
+    asks: aggregate(book.asks, false),
+  };
+}
