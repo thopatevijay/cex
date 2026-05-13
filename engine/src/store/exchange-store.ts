@@ -1,5 +1,8 @@
+
+
 const QUOTE = "USD";
-const SEED_AMOUNT = 1_000_00;
+const SEED_QUOTE = 1_000_00;
+const SEED_BASE = 1_000;
 
 export type Side = "buy" | "sell";
 export type OrderType = "market" | "limit";
@@ -77,17 +80,18 @@ export const ORDERBOOKS = new Map<string, OrderBook>();
 export const ORDERS = new Map<string, OrderRecord>();
 export const FILLS: Fill[] = [];
 
+// balances
 export function ensureBalances(userId: string, symbol: string) : void {
   if(!BALANCES.has(userId)) BALANCES.set(userId, {});
 
   const userBalances = BALANCES.get(userId)!;
 
   if(!userBalances[QUOTE]) {
-    userBalances[QUOTE] = { available : SEED_AMOUNT, locked: 0 };
+    userBalances[QUOTE] = { available : SEED_QUOTE, locked: 0 };
   }
 
   if(userBalances[symbol]) {
-    userBalances[symbol] = { available: SEED_AMOUNT, locked: 0};
+    userBalances[symbol] = { available: SEED_BASE, locked: 0};
   }
 }
 

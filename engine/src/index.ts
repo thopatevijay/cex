@@ -70,10 +70,11 @@ function handleEngineRequest(message: EngineRequest): unknown {
    */
 
   switch (message.type) {
-    case "get_user_balance": {}
+    case "get_user_balance": {
       const { userId } = message.payload as { userId : string};
       return getUserBalance(userId);
       // return 123;
+    }
     default:
       throw new Error(`Not implemented yet: ${message.type}`);
   }
