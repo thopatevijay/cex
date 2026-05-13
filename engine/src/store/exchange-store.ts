@@ -285,10 +285,73 @@ export function getDepth(symbol: string) : DepthResponse {
     return result;
   };
 
-
   return {
     symbol,
     bids: aggregate(book.bids, true),
     asks: aggregate(book.asks, false),
   };
+}
+
+export function getOrder(orderId: string, userId: string): OrderRecord | undefined {
+  const order = ORDERS.get(orderId);
+  if(!order) return undefined
+
+  if(order.userId !== userId) return undefined;
+
+  return order;
+};
+
+export function cancelOrder(
+  orderId: string,
+  userId: string,
+): {ok: boolean, error?: string, order?: OrderRecord}  {
+
+  const order = ORDERS.get(orderId);
+  if(!order) {
+    return { ok: false, error: "order not found"};
+  }
+
+  if(order.userId !== userId) {
+    return {ok: false, error: "order not found"};
+  }
+
+  if(order.status === "filled") {
+    return { ok: false, error: "filled orders cannot be cancelled" };
+  }
+
+  if(order.status == "cancelled") {
+    return { ok : false, error : "order already cancelled"};
+  }
+
+  const book = ORDERBOOKS.get(order.symbol);
+  console.log(book);
+
+  //remove from book
+  if( book && order.price !== null) {
+    const levels = order.side === "buy" ? book.bids : book.asks;
+    const queue = levels.get(order.price);
+    if(queue) {
+      const idx = queue.findIndex((o) => o.orderId === orderId);
+      if(idx !== -1) queue.splice(idx, 1);
+      if(queue.length === 0) levels.delete(order.price);
+    }
+  }
+
+  //refund
+  const unfilled = order.qty - order.filledQty;
+  if(unfilled > 0) {
+    if(order.side === "buy") {
+      const refund = order.price! * unfilled;
+      const bal = BALANCES.get(order.userId)![QUOTE];
+      bal.locked -= refund;
+      bal.available += refund;
+    } else {
+      const bal = BALANCES.get(order.userId)![order.symbol];
+      bal.locked -= unfilled;
+      bal.available += unfilled;
+    }
+  }
+
+  order.status = "cancelled";
+  return { ok : true, order};
 }

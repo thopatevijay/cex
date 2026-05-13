@@ -2,7 +2,9 @@ import "dotenv/config";
 import { createClient } from "redis";
 import { env } from "./utils/env.js";
 import { 
+  cancelOrder,
   getDepth,
+  getOrder,
   getUserBalance,
   placeLimitOrder,
   type CreateOrderInput,
@@ -98,6 +100,19 @@ function handleEngineRequest(message: EngineRequest): unknown {
       const { symbol } = message.payload as { symbol : string};
       return getDepth(symbol);
     }
+    case "get_order" : {
+      const { orderId, userId } = message.payload as { orderId: string, userId: string};
+      const order = getOrder(orderId, userId);
+      if(!order) throw new Error("order not found");
+      return order;
+    }
+    case "cancel_order": {
+      const { orderId, userId } = message.payload as { orderId: string, userId: string };
+      const result = cancelOrder(orderId, userId);
+      if (!result.ok) throw new Error(result.error);
+      return result.order;
+    }
+
     default:
       throw new Error(`Not implemented yet: ${message.type}`);
   }
