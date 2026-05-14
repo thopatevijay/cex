@@ -7,6 +7,7 @@ import {
   getOrder,
   getUserBalance,
   placeLimitOrder,
+  placeMarketOrder,
   type CreateOrderInput,
 
  } from "./store/exchange-store.js";
@@ -84,7 +85,9 @@ function handleEngineRequest(message: EngineRequest): unknown {
     case "create_order": {
       console.log("ping");
       const payload = message.payload as CreateOrderInput;
-      const order = placeLimitOrder(payload);
+      const order = payload.type === "limit"
+        ? placeLimitOrder(payload)
+        : placeMarketOrder(payload);
 
       return {
         orderId: order.orderId,
